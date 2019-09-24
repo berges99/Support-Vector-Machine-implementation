@@ -1,0 +1,65 @@
+reset;
+model SVMprimal.mod;
+data "./DATA/Extra/svm_extra_data.dat"; #gensvmdat: ./DATA/Generator/input/size30.dat / extra: ./DATA/Extra/svm_extra_data.dat
+
+option solver minos; #cplex/minos;
+
+problem PRIMAL_SVM: w, gamma, s, primal_SVM, c1, c2;
+solve PRIMAL_SVM;
+display w, gamma, s;
+
+reset;
+model SVMdual.mod;
+data "./DATA/Extra/svm_extra_data.dat";
+
+option solver minos;
+
+problem DUAL_SVM: lambda, dual_SVM, c1;
+solve DUAL_SVM;
+display lambda;
+
+
+# Retrieving normal vector w from the dual solution lambda
+param w {1..n};
+let {j in {1..n}} w[j] := sum{i in {1..m}}lambda[i]*y[i]*A[i,j];
+
+# Retrieving 'intercept' gamma from the dual solution lambda
+# We need to find some lambda[i] that is greater than 0 but different from nu
+param gamma;
+param index; #auxiliary index
+# Loop over the lambda vector and set the index
+for {i in {1..m}} {
+	if lambda[i] > 0 and lambda[i] != nu then let index := i;
+}
+let gamma := 1/y[index] -sum{j in {1..n}}w[j]*A[index,j];
+
+display w, gamma;
+
+
+###
+# PREDICTIONS
+###
+param predictions {1..m};
+let {i in {1..m}} predictions[i] := gamma +sum{j in {1..n}}w[j]*A[i,j];
+let {i in {1..m}} predictions[i] := if predictions[i] <= 0 then -1 else 1;
+display predictions;
+
+# We build a confusion matrix
+param confusion_matrix {1..2,1..2} default 0;
+for {i in {1..m}} {
+	if predictions[i] == y[i] and predictions[i] = 1 then
+		let confusion_matrix[1,1] := confusion_matrix[1,1] +1;
+	if predictions[i] == y[i] and predictions[i] = -1 then
+		let confusion_matrix[2,2] := confusion_matrix[2,2] +1;
+	if predictions[i] != y[i] and predictions[i] = 1 then
+		let confusion_matrix[1,2] := confusion_matrix[1,2] +1;
+	if predictions[i] != y[i] and predictions[i] = -1 then
+		let confusion_matrix[2,1] := confusion_matrix[2,1] +1;
+}
+
+printf "Confusion matrix of our classification problem.\n[1,1]:TP, [2,2]:TN, [1,2]:FP, [2,1]:FN \n\n";
+display confusion_matrix;
+
+param total_accuracy = (confusion_matrix[1,1] +confusion_matrix[2,2]) / m;
+display total_accuracy;
+
